@@ -1,0 +1,13 @@
+{
+    "name": "orange/files",
+    "description": "Orange File Handling package",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "orange\\files\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=8.4"
+    }
+}
