@@ -68,11 +68,11 @@ class FilesTest extends TestCase
             'size' => strlen($content),
         ];
 
-        $input = $this->createMock(InputInterface::class);
+        $input = $this->createStub(InputInterface::class);
 
-        $input->method('file')
-            ->with('upload', UNDEFINED)
-            ->willReturn($fileData);
+        $input->method('file')->willReturnMap([
+            ['upload', UNDEFINED, $fileData],
+        ]);
 
         $files = Files::newInstance($config, $input);
 
@@ -105,10 +105,10 @@ class FilesTest extends TestCase
             'size' => [1, 1],
         ];
 
-        $input = $this->createMock(InputInterface::class);
-        $input->method('file')
-            ->with(null, UNDEFINED)
-            ->willReturn(['files' => $filesGrouped]);
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            [null, UNDEFINED, ['files' => $filesGrouped]],
+        ]);
 
         $files = Files::newInstance($config, $input);
 
@@ -129,10 +129,10 @@ class FilesTest extends TestCase
         $config['workingDirectory'] = $this->workingDir;
         $config['auto cleanup seconds'] = 0;
 
-        $input = $this->createMock(InputInterface::class);
-        $input->method('file')
-            ->with(null, UNDEFINED)
-            ->willReturn(UNDEFINED);
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            [null, UNDEFINED, UNDEFINED],
+        ]);
 
         $files = Files::newInstance($config, $input);
 
