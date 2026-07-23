@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="unittest/bootstrap.php"
+         cacheResult="false"
+         colors="true">
+    <testsuites>
+        <testsuite name="orange/files">
+            <directory>unittest</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>

@@ -18,11 +18,18 @@ use orange\framework\Security;
  * Represents a single uploaded file and provides helper methods for validating,
  * inspecting, moving, and deleting the temporarily stored upload.
  *
+ * While the file sits in the working directory it is temporary - if the
+ * object is destroyed without move() being called, the file is removed.
+ * After a successful move() the file is yours: destruction leaves it alone.
+ *
  * @package orange\files
  */
 class UploadObject
 {
-    /** @var string Local temporary file path for the uploaded file */
+    /** @var int move() collision pseudo error code (see 'error map' config) */
+    public const ERR_ALREADY_EXISTS = 199;
+
+    /** @var string Local file path (working directory until move(), then the destination) */
     protected string $localTmpPath = '';
 
     /** @var int Actual file size in bytes (from temporary storage) */
@@ -37,6 +44,9 @@ class UploadObject
     /** @var int Upload error code from the upload process */
     protected int $errorNum = 0;
 
+    /** @var bool True while the file still lives in the working directory */
+    protected bool $isTemporary = false;
+
     /**
      * UploadObject constructor.
      *
@@ -47,32 +57,32 @@ class UploadObject
      * @param array $config Configuration options for upload handling.
      * @param array $file  Standard $_FILES array for a single uploaded file.
      *
-     * @throws FilesFormatError On missing required keys, unknown error codes, missing temporary file, or move failure.
+     * @throws FilesFormatError On missing required keys or unknown error codes.
      * @throws CouldNotLocateFile could not locate the file
      * @throws CouldNotMove could not move the file
      */
     public function __construct(protected array $config, protected array $file)
     {
-        // $file is a standard $_FILES array
-        foreach ($this->config['required file keys'] as $key) {
-            $missing = [];
+        // $file is a standard $_FILES array - report EVERY missing key at once
+        $missing = [];
 
+        foreach ($this->config['required file keys'] as $key) {
             if (!isset($file[$key])) {
                 $missing[] = $key;
             }
+        }
 
-            if (!empty($missing)) {
-                throw new FilesFormatError('The following file key(s) are missing: "' . implode(', ', $missing) . '"');
-            }
+        if (!empty($missing)) {
+            throw new FilesFormatError('The following file key(s) are missing: "' . implode(', ', $missing) . '"');
         }
 
         // get the error number
         $this->errorNum = $file['error'];
 
-        if (!in_array($this->errorNum, array_keys($this->config['error map']))) {
+        if (!array_key_exists($this->errorNum, $this->config['error map'])) {
             throw new FilesFormatError('Unknown file error number ' . $this->errorNum);
         } elseif ($this->errorNum == 0) {
-            // if auto clean set then clean filename using Orange security class
+            // clean filename using Orange security class
             $this->cleanName = Security::getInstance([])->cleanFilename($file['name']);
 
             if (!file_exists($file['tmp_name'])) {
@@ -82,20 +92,32 @@ class UploadObject
             // move to a local folder from where ever you might have PHP configured for
             $this->localTmpPath = $this->config['workingDirectory'] . '/' . md5_file($file['tmp_name']) . '-' . md5($file['tmp_name']) . $this->config['temporary file suffix'];
 
-            if (!rename($file['tmp_name'], $this->localTmpPath)) {
+            // a genuine HTTP upload only moves through move_uploaded_file() -
+            // it verifies the file arrived via POST, closing off tricks that
+            // point tmp_name at an arbitrary server file. The rename() branch
+            // covers CLI / testing where no real upload exists
+            $moved = is_uploaded_file($file['tmp_name'])
+                ? move_uploaded_file($file['tmp_name'], $this->localTmpPath)
+                : rename($file['tmp_name'], $this->localTmpPath);
+
+            if (!$moved) {
                 throw new CouldNotMove('Could not move uploaded file to ' . $this->config['workingDirectory']);
             }
 
+            // in the working directory the file is ours to clean up
+            $this->isTemporary = true;
+
             // now determine the filesize ourself not what was passed
-            $this->realSize = filesize($this->localTmpPath);
+            $this->realSize = (int)filesize($this->localTmpPath);
 
             // now determine the file type ourself not what was passed
-            $this->realType = mime_content_type($this->localTmpPath);
+            $this->realType = (string)mime_content_type($this->localTmpPath);
         }
     }
 
     /**
-     * Get the current internal temporary path.
+     * Get the current file path - working directory until move(), then the
+     * destination.
      *
      * @return string
      */
@@ -129,7 +151,7 @@ class UploadObject
      *
      * @return string
      */
-    public function MimeType(): string
+    public function mimeType(): string
     {
         return $this->realType;
     }
@@ -205,39 +227,39 @@ class UploadObject
     }
 
     /**
-     * Check whether actual MIME type matches any allowed type or configured MIME for
-     * the provided pseudo extension values.
+     * Check whether actual MIME type matches any allowed type or configured
+     * MIME for the provided pseudo extension values.
      *
      * @param string ...$oneOf One or more MIME types or extension keys to test.
      *
      * @return bool
      */
-    public function isOneOf(): bool
+    public function isOneOf(string ...$oneOf): bool
     {
-        $oneOf = func_get_args();
-
-        $match = false;
-
         // try exact mime match
-        foreach ($oneOf as $type) {
-            if ($this->realType == $type) {
-                $match = true;
-                break;
-            }
+        if (in_array($this->realType, $oneOf, true)) {
+            return true;
         }
-        // try to match on sudo extension
-        foreach ($this->config['mimes'] as $ext => $text) {
-            if ($this->realType == $text && in_array($ext, func_get_args())) {
-                $match = true;
-                break;
+
+        // try to match on pseudo extension ('png' matches when config maps
+        // png => image/png); no 'mimes' config means no extension matching
+        foreach ($this->config['mimes'] ?? [] as $ext => $mime) {
+            if ($this->realType === $mime && in_array((string)$ext, $oneOf, true)) {
+                return true;
             }
         }
 
-        return $match;
+        return false;
     }
 
     /**
      * Move the temporary file to a new directory and optionally rename.
+     *
+     * On success the object now points at the destination and the file is no
+     * longer treated as temporary (destruction leaves it in place). On a
+     * collision (without $autoNumber) nothing moves: the object keeps
+     * pointing at the temporary file and the error code is set to
+     * ERR_ALREADY_EXISTS.
      *
      * @param string      $newDirectory Target destination directory.
      * @param string|null $newName      Optional new filename; defaults to cleaned name.
@@ -245,6 +267,7 @@ class UploadObject
      *
      * @return bool True on success, false otherwise.
      *
+     * @throws FileNotFound When the temporary file no longer exists.
      * @throws DirectoryNotFound When target directory is not found.
      * @throws DirectoryNotWritable When target directory is not writable.
      */
@@ -262,24 +285,31 @@ class UploadObject
             throw new DirectoryNotWritable('The location you would like to move to "' . $newDirectory . '" is not writable.');
         }
 
-        $tmpPath = $this->localTmpPath;
+        $newName ??= $this->cleanName;
 
-        $newName = $newName ?? $this->cleanName;
-
-        $this->localTmpPath = $newDirectory . DIRECTORY_SEPARATOR . $newName;
+        $destination = $newDirectory . DIRECTORY_SEPARATOR . $newName;
 
         if ($autoNumber) {
-            $this->localTmpPath = $this->findNextNumber($this->localTmpPath);
+            $destination = $this->findNextNumber($destination);
         }
 
-        if (file_exists($this->localTmpPath)) {
-            $this->errorNum = 199;
-            $success = false;
-        } else {
-            $success = rename($tmpPath, $this->localTmpPath);
+        if (file_exists($destination)) {
+            // refuse to clobber - and critically, keep pointing at OUR
+            // temporary file, never at the existing destination file
+            $this->errorNum = self::ERR_ALREADY_EXISTS;
+
+            return false;
         }
 
-        return $success;
+        if (!rename($this->localTmpPath, $destination)) {
+            return false;
+        }
+
+        // the file is now the caller's - destruction must leave it alone
+        $this->localTmpPath = $destination;
+        $this->isTemporary = false;
+
+        return true;
     }
 
     /**
@@ -307,11 +337,14 @@ class UploadObject
     {
         $pathinfo = pathinfo($filePath);
 
+        // extensionless files get no trailing dot
+        $extension = isset($pathinfo['extension']) ? '.' . $pathinfo['extension'] : '';
+
         $newFilePath = $filePath;
         $num = 1;
 
         while (file_exists($newFilePath)) {
-            $newFilePath = $pathinfo['dirname'] . DIRECTORY_SEPARATOR . $pathinfo['filename'] . sprintf($this->config['auto number format'], $num++) . '.' . $pathinfo['extension'];
+            $newFilePath = $pathinfo['dirname'] . DIRECTORY_SEPARATOR . $pathinfo['filename'] . sprintf($this->config['auto number format'], $num++) . $extension;
         }
 
         return $newFilePath;
@@ -332,13 +365,12 @@ class UploadObject
     /**
      * Destructor used to clean up remaining file resources.
      *
-     * If the temporary file still exists when the object is destroyed,
-     * attempt to delete it to avoid leaving stray temp files behind.
+     * Only files still in their temporary state are removed - a file that was
+     * successfully move()d belongs to the caller and is left in place.
      */
     public function __destruct()
     {
-        // if the file still exists in the temp location then try to delete it
-        if (file_exists($this->localTmpPath)) {
+        if ($this->isTemporary && file_exists($this->localTmpPath)) {
             @unlink($this->localTmpPath);
         }
     }

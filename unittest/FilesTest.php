@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../../vendor/autoload.php';
-require_once __DIR__ . '/../../../../vendor/orange/framework/src/helpers/wrappers.php';
-
 use orange\files\Files;
 use orange\files\UploadObject;
 use orange\files\exceptions\NoFilesFound;
@@ -17,10 +14,6 @@ class FilesTest extends TestCase
 
     protected function setUp(): void
     {
-        if (!defined('UNDEFINED')) {
-            define('UNDEFINED', chr(0));
-        }
-
         $this->workingDir = sys_get_temp_dir() . '/orange_files_files_test_' . uniqid();
         mkdir($this->workingDir, 0777, true);
     }
@@ -49,32 +42,47 @@ class FilesTest extends TestCase
         rmdir($path);
     }
 
-    public function testGetSingleFileReturnsUploadObject(): void
+    private function config(): array
     {
         $config = require __DIR__ . '/../src/config/files.php';
         $config['workingDirectory'] = $this->workingDir;
         $config['auto cleanup seconds'] = 0;
 
-        $content = 'abc';
-        $tmpSource = tempnam(sys_get_temp_dir(), 'orange_files_');
-        file_put_contents($tmpSource, $content);
+        return $config;
+    }
 
-        $fileData = [
-            'name' => 'single.txt',
-            'full_path' => $tmpSource,
+    private function tmpFile(string $content): string
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'orange_files_');
+        file_put_contents($tmp, $content);
+
+        return $tmp;
+    }
+
+    private function singleFileData(string $name = 'single.txt', string $content = 'abc'): array
+    {
+        $tmp = $this->tmpFile($content);
+
+        return [
+            'name' => $name,
+            'full_path' => $tmp,
             'type' => 'text/plain',
-            'tmp_name' => $tmpSource,
+            'tmp_name' => $tmp,
             'error' => 0,
             'size' => strlen($content),
         ];
+    }
+
+    public function testGetSingleFileReturnsUploadObject(): void
+    {
+        $fileData = $this->singleFileData();
 
         $input = $this->createStub(InputInterface::class);
-
         $input->method('file')->willReturnMap([
             ['upload', UNDEFINED, $fileData],
         ]);
 
-        $files = Files::newInstance($config, $input);
+        $files = Files::newInstance($this->config(), $input);
 
         $uploadObjects = $files->get('upload');
 
@@ -87,14 +95,8 @@ class FilesTest extends TestCase
 
     public function testGetMultipleFilesReturnsMultipleUploadObjects(): void
     {
-        $config = require __DIR__ . '/../src/config/files.php';
-        $config['workingDirectory'] = $this->workingDir;
-        $config['auto cleanup seconds'] = 0;
-
-        $tmpFile1 = tempnam(sys_get_temp_dir(), 'orange_files_');
-        file_put_contents($tmpFile1, 'x');
-        $tmpFile2 = tempnam(sys_get_temp_dir(), 'orange_files_');
-        file_put_contents($tmpFile2, 'y');
+        $tmpFile1 = $this->tmpFile('x');
+        $tmpFile2 = $this->tmpFile('y');
 
         $filesGrouped = [
             'name' => ['a.txt', 'b.txt'],
@@ -108,9 +110,10 @@ class FilesTest extends TestCase
         $input = $this->createStub(InputInterface::class);
         $input->method('file')->willReturnMap([
             [null, UNDEFINED, ['files' => $filesGrouped]],
+            ['files', UNDEFINED, $filesGrouped],
         ]);
 
-        $files = Files::newInstance($config, $input);
+        $files = Files::newInstance($this->config(), $input);
 
         $uploadObjects = $files->get();
 
@@ -125,19 +128,111 @@ class FilesTest extends TestCase
 
     public function testGetThrowsNoFilesFoundWhenNoFiles(): void
     {
-        $config = require __DIR__ . '/../src/config/files.php';
-        $config['workingDirectory'] = $this->workingDir;
-        $config['auto cleanup seconds'] = 0;
-
         $input = $this->createStub(InputInterface::class);
         $input->method('file')->willReturnMap([
             [null, UNDEFINED, UNDEFINED],
         ]);
 
-        $files = Files::newInstance($config, $input);
+        $files = Files::newInstance($this->config(), $input);
 
         $this->expectException(NoFilesFound::class);
 
         $files->get();
+    }
+
+    public function testRepeatedGetReturnsTheSameMemoizedObjects(): void
+    {
+        $fileData = $this->singleFileData();
+
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            ['upload', UNDEFINED, $fileData],
+            [null, UNDEFINED, ['upload' => $fileData]],
+        ]);
+
+        $files = Files::newInstance($this->config(), $input);
+
+        $first = $files->get('upload');
+
+        // processing consumed the PHP temp file - before memoization a second
+        // call re-processed and blew up with CouldNotLocateFile
+        $second = $files->get('upload');
+        $all = $files->get();
+
+        $this->assertSame($first['upload'], $second['upload']);
+        $this->assertSame($first['upload'], $all['upload']);
+    }
+
+    public function testGetOneReturnsTheObjectDirectly(): void
+    {
+        $fileData = $this->singleFileData();
+
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            ['upload', UNDEFINED, $fileData],
+        ]);
+
+        $files = Files::newInstance($this->config(), $input);
+
+        $upload = $files->getOne('upload');
+
+        $this->assertInstanceOf(UploadObject::class, $upload);
+        $this->assertSame('single.txt', $upload->userFilename());
+    }
+
+    public function testGetFieldReturnsOnlyThatFieldsObjects(): void
+    {
+        $avatar = $this->singleFileData('avatar.txt');
+        $resume = $this->singleFileData('resume.txt');
+
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            ['avatar', UNDEFINED, $avatar],
+            ['resume', UNDEFINED, $resume],
+        ]);
+
+        $files = Files::newInstance($this->config(), $input);
+
+        $files->get('avatar');
+
+        $resumeObjects = $files->get('resume');
+
+        // only resume's entry - not everything processed so far
+        $this->assertCount(1, $resumeObjects);
+        $this->assertArrayHasKey('resume', $resumeObjects);
+    }
+
+    public function testHas(): void
+    {
+        $fileData = $this->singleFileData();
+
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            ['upload', UNDEFINED, $fileData],
+            ['missing', UNDEFINED, UNDEFINED],
+        ]);
+
+        $files = Files::newInstance($this->config(), $input);
+
+        $this->assertTrue($files->has('upload'));
+        $this->assertFalse($files->has('missing'));
+
+        // still true after processing consumed the raw input
+        $files->get('upload');
+        $this->assertTrue($files->has('upload'));
+    }
+
+    public function testGetUnknownFieldThrows(): void
+    {
+        $input = $this->createStub(InputInterface::class);
+        $input->method('file')->willReturnMap([
+            ['nope', UNDEFINED, UNDEFINED],
+        ]);
+
+        $files = Files::newInstance($this->config(), $input);
+
+        $this->expectException(NoFilesFound::class);
+
+        $files->get('nope');
     }
 }

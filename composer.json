@@ -1,13 +1,44 @@
 {
     "name": "orange/files",
-    "description": "Orange File Handling package",
+    "description": "Uploaded-file handling: normalizes $_FILES into validated, movable UploadObject instances.",
     "type": "library",
+    "keywords": [
+        "upload",
+        "files",
+        "file-upload",
+        "mime"
+    ],
+    "homepage": "https://github.com/ProjectOrangeBox/files",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Don Myers",
+            "email": "donmyers@me.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/ProjectOrangeBox/files/issues",
+        "source": "https://github.com/ProjectOrangeBox/files"
+    },
+    "require": {
+        "php": ">=8.4",
+        "ext-fileinfo": "*",
+        "orange/framework": "dev-master"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.2"
+    },
     "autoload": {
         "psr-4": {
             "orange\\files\\": "src/"
         }
     },
-    "require": {
-        "php": ">=8.4"
-    }
+    "scripts": {
+        "test": "phpunit"
+    },
+    "scripts-descriptions": {
+        "test": "Run the PHPUnit test suite"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }

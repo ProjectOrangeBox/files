@@ -1,9 +1,0 @@
-Files
- [x] Get single file returns upload object
- [x] Get multiple files returns multiple upload objects
- [x] Get throws no files found when no files
-
-Upload Object
- [x] Upload object can be constructed and provides expected properties
- [x] Upload object with error does not move file
-

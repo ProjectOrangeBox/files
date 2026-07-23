@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 return [
     'required file keys' => ['name', 'full_path', 'type', 'tmp_name', 'error', 'size'],
+    // extension => mime map used by UploadObject::isOneOf('png', ...).
+    // Defaults to the framework's output config 'mimes' key (read straight
+    // from the Config service - the Output class is never instantiated), so
+    // extension matching works out of the box; a caller-supplied 'mimes'
+    // still merges on top. Falls back to [] when no container is up yet
+    // (e.g. a config file required directly in a unit test).
+    'mimes' => config('output', 'mimes', []),
     'auto cleanup seconds' => 600,
     'temporary file suffix' => '.upload-temp',
     // sprintf format
