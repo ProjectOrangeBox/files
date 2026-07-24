@@ -1,0 +1,22 @@
+Files
+ [x] Get single file returns upload object
+ [x] Get multiple files returns multiple upload objects
+ [x] Get throws no files found when no files
+ [x] Repeated get returns the same memoized objects
+ [x] Get one returns the object directly
+ [x] Get field returns only that fields objects
+ [x] Has
+ [x] Get unknown field throws
+
+Upload Object
+ [x] Upload object can be constructed and provides expected properties
+ [x] Upload object with error does not move file
+ [x] Destructor removes unmoved temporary file
+ [x] Destructor keeps moved file
+ [x] Move collision keeps pointing at the temporary file
+ [x] Move auto number resolves collision
+ [x] Constructor reports all missing keys at once
+ [x] Unknown error number throws
+ [x] Is one of without mimes config only matches exact types
+ [x] Delete throws when file already gone
+
