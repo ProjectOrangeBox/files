@@ -39,7 +39,7 @@ class Files extends Factory
     /**
      * Files constructor.
      *
-     * @param array          $config Configuration options for file handling.
+     * @param array<string, mixed> $config Configuration options for file handling.
      * @param InputInterface $input  Input bridge to retrieve uploaded files.
      *
      * @throws DirectoryNotWritable When the temporary directory cannot be created or is not writable.
@@ -128,7 +128,15 @@ class Files extends Factory
     {
         $objects = $this->processField($fieldname);
 
-        return $objects[array_key_first($objects)];
+        // processField() is expected to have thrown already, but array_key_first()
+        // returns null on an empty array and that would index the array with null
+        $first = array_key_first($objects);
+
+        if ($first === null) {
+            throw new NoFilesFound($fieldname);
+        }
+
+        return $objects[$first];
     }
 
     /**
@@ -160,7 +168,7 @@ class Files extends Factory
      * Process a single upload field (single file or array of files).
      *
      * @param string $fieldname Upload field name.
-     * @param array  $file      $_FILES-style array for field entry.
+     * @param array<string, mixed> $file $_FILES-style array for field entry.
      * @return array<int, string> The uploadObjects keys created for this field.
      */
     protected function processOne(string $fieldname, array $file): array
@@ -199,7 +207,11 @@ class Files extends Factory
     {
         // run the clean up on working directory based on config
         if ($seconds > 0) {
-            foreach (glob($this->workingDirectory . DIRECTORY_SEPARATOR . '*' . $this->config['temporary file suffix']) as $uploadTempFile) {
+            // glob() returns false when the directory cannot be read, which
+            // foreach cannot take
+            $tempFiles = glob($this->workingDirectory . DIRECTORY_SEPARATOR . '*' . $this->config['temporary file suffix']) ?: [];
+
+            foreach ($tempFiles as $uploadTempFile) {
                 if (filemtime($uploadTempFile) < time() - $seconds) {
                     unlink($uploadTempFile);
                 }

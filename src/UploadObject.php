@@ -54,8 +54,8 @@ class UploadObject
      * the temporary file to a controlled working directory, and computes actual
      * size and MIME type.
      *
-     * @param array $config Configuration options for upload handling.
-     * @param array $file  Standard $_FILES array for a single uploaded file.
+     * @param array<string, mixed> $config Configuration options for upload handling.
+     * @param array<string, mixed> $file Standard $_FILES array for a single uploaded file.
      *
      * @throws FilesFormatError On missing required keys or unknown error codes.
      * @throws CouldNotLocateFile could not locate the file
@@ -344,7 +344,7 @@ class UploadObject
         $num = 1;
 
         while (file_exists($newFilePath)) {
-            $newFilePath = $pathinfo['dirname'] . DIRECTORY_SEPARATOR . $pathinfo['filename'] . sprintf($this->config['auto number format'], $num++) . $extension;
+            $newFilePath = ($pathinfo['dirname'] ?? '.') . DIRECTORY_SEPARATOR . $pathinfo['filename'] . sprintf($this->config['auto number format'], $num++) . $extension;
         }
 
         return $newFilePath;
