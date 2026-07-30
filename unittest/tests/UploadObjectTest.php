@@ -43,7 +43,7 @@ class UploadObjectTest extends TestCase
 
     private function config(array $overrides = []): array
     {
-        $config = require __DIR__ . '/../src/config/files.php';
+        $config = require __DIR__ . '/../../src/config/files.php';
         $config['workingDirectory'] = $this->workingDir;
         $config['auto cleanup seconds'] = 0;
 

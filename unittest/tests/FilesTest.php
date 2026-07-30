@@ -44,7 +44,7 @@ class FilesTest extends TestCase
 
     private function config(): array
     {
-        $config = require __DIR__ . '/../src/config/files.php';
+        $config = require __DIR__ . '/../../src/config/files.php';
         $config['workingDirectory'] = $this->workingDir;
         $config['auto cleanup seconds'] = 0;
 
